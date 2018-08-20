@@ -1,0 +1,117 @@
+---
+- name: New VPC
+  ec2_vpc_net:
+    name: "{{vpc_name}}"
+    cidr_block: "{{cidr_block}}"
+    region: "{{region}}"
+    state: "present"
+  register: new_vpc
+
+- name: To get the VPC ID 
+  set_fact:
+    vpc_id: "{{new_vpc.vpc.id}}"
+- name: TO Create public Subnet in VPC
+  ec2_vpc_subnet:
+    state: "present"
+    vpc_id: "{{vpc_id}}"
+    cidr: "{{public_cidr}}"
+    az: "{{az}}"
+    region: "{{region}}"
+    resource_tags:
+      Name: "Public Subnet"
+  register: public_subnet
+
+- name: To Create private subnet in VPC
+  ec2_vpc_subnet:
+    state: "present"
+    vpc_id: "{{vpc_id}}"
+    cidr: "{{private_cidr}}"
+    az: "{{az}}"
+    region: "{{region}}"
+    resource_tags:
+      Name: "Private Subnet"
+  register: private_subnet
+
+- name: to get subnet id in a variable
+  set_fact:
+    public_subnet_id: "{{public_subnet.subnet.id}}"
+
+- name: Create Internet gateway
+  ec2_vpc_igw:
+    vpc_id: "{{vpc_id}}"
+    region: "{{region}}"  
+    state: "present"
+  register: my_vpc_igw
+
+- name: create NAT gateway
+  ec2_vpc_nat_gateway:
+    subnet_id: "{{public_subnet_id}}"
+    region: "{{region}}"
+    wait: yes
+    if_exist_do_not_create: true
+  register: create_nat_gateway
+
+- name: Create a route table
+  ec2_vpc_route_table:
+    region: "{{region}}"
+#    propagating_vgw_ids: yes
+    vpc_id: "{{vpc_id}}"
+    state: "present"
+    subnets: "{{public_subnet_id}}"
+    routes:
+      - dest: 0.0.0.0/0
+        gateway_id: "{{my_vpc_igw.gateway_id}}"
+
+- name: Create a security group
+  ec2_group:
+    name: my_security_group
+    description: first security group
+    vpc_id: "{{vpc_id}}"
+    region: "{{region}}"
+    rules:
+      - proto: all
+        cidr_ip: 0.0.0.0/0
+  register: new_security_group
+
+- name: to get the security group id
+  set_fact:
+    security_group: "{{new_security_group.group_id}}"
+
+- name: Set Internet Gateway ID in variable
+  set_fact:
+    igw_id: "{{ my_vpc_igw.gateway_id }}" 
+
+- name: Launch Instance
+  ec2:
+    key_name: "{{keypair}}"
+#    aws_access_key: "{{AWS_ACCESS_KEY_ID}}"
+#    aws_secret_key: "{{AWS_SECRET_ACCESS_KEY}}"
+    group_id: "{{security_group}}"
+    vpc_subnet_id: "{{ public_subnet_id}}"
+    instance_type: "{{instance_type}}"
+    image: "{{ image }}"
+    wait: true
+    region: "{{region}}"
+    count: "{{count}}"
+    assign_public_ip: yes
+    instance_tags:
+      ec2: "{{tag}}" 
+#    vpc_subnet_id: "{{public_subnet_id}}"
+  register: var
+
+
+- name: Add new instance to ansible group
+  add_host: 
+    name: "{{item.public_ip}}"
+    groups: "mygroups"
+    ec2_id: "{{item.id}}"
+  with_items: "{{ var.instances}}"
+
+- name: Wait for instances to boot up
+  wait_for:
+    host: "{{item.public_ip}}"
+    port: 22
+    delay: 30
+    timeout: 300
+    state: started
+  with_items: "{{var.instances}}"

@@ -1,0 +1,22 @@
+---
+
+- name: Create a EC2 Instance
+  hosts: localhost
+  connection: local
+  vars_files:
+   - group_vars/all
+   - secret.yml
+  gather_facts: false
+  roles: 
+   - ec2	
+
+- name: Docker installation
+  hosts: mygroups
+  vars_files:
+   - group_vars/all
+   - secret.yml
+  become: true
+  become_user: root
+  become_method: sudo
+  roles:
+    - docker

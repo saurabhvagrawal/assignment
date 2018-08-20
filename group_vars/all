@@ -1,0 +1,13 @@
+# EC2 instance variable
+vpc_name: myvpc
+cidr_block: 172.20.0.0/16
+public_cidr: 172.20.10.0/24
+private_cidr: 172.20.20.0/24
+az: us-east-2a
+count: 1
+tag: myec2
+
+keypair: id_rsa
+instance_type: t2.micro
+image: ami-5e8bb23b
+region: us-east-2
